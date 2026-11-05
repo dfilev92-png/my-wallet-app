@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>My Wallet</title>
-<meta name="app-version" content="2026-08-23-02">
+<meta name="app-version" content="2026-11-04-02">
 <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KPHJlY3Qgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIHJ4PSIyMCIgZmlsbD0iIzBmMTIxMCIvPgo8cmVjdCB4PSIxOCIgeT0iMzIiIHdpZHRoPSI2NCIgaGVpZ2h0PSI0MiIgcng9IjgiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2M5YTE1ZSIgc3Ryb2tlLXdpZHRoPSI1Ii8+CjxjaXJjbGUgY3g9IjY2IiBjeT0iNTMiIHI9IjUiIGZpbGw9IiNjOWExNWUiLz4KPC9zdmc+">
 <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KPHJlY3Qgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIHJ4PSIyMCIgZmlsbD0iIzBmMTIxMCIvPgo8cmVjdCB4PSIxOCIgeT0iMzIiIHdpZHRoPSI2NCIgaGVpZ2h0PSI0MiIgcng9IjgiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2M5YTE1ZSIgc3Ryb2tlLXdpZHRoPSI1Ii8+CjxjaXJjbGUgY3g9IjY2IiBjeT0iNTMiIHI9IjUiIGZpbGw9IiNjOWExNWUiLz4KPC9zdmc+">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -340,6 +340,27 @@
     background:rgba(255,255,255,.15);color:#fff;display:flex;align-items:center;
     justify-content:center;font-size:22px;cursor:pointer;
   }
+  /* Description quick-select dropdown */
+  .title-wrap{position:relative;}
+  .title-suggest{
+    position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30;
+    background:var(--card);border:1px solid var(--gold-dim);border-radius:12px;
+    max-height:220px;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    box-shadow:0 10px 28px rgba(0,0,0,.35);
+  }
+  .ts-head{
+    padding:9px 13px 5px;font-size:10.5px;font-weight:700;letter-spacing:.7px;
+    text-transform:uppercase;color:var(--faint);
+  }
+  .ts-row{
+    padding:11px 13px;font-size:15px;color:var(--ink);cursor:pointer;
+    border-top:1px solid var(--line);display:flex;align-items:center;gap:8px;
+  }
+  .ts-head + .ts-row{border-top:none;}
+  .ts-row:active{background:var(--gold);color:#1a1508;}
+  .ts-row .ts-clock{font-size:12px;opacity:.7;}
+  .ts-row .ts-hint{font-size:12.5px;color:var(--faint);}
+
   .photo-add-btn{
     width:64px;height:64px;border-radius:10px;border:1px dashed var(--faint);
     background:var(--card);color:var(--muted);font-size:22px;
@@ -526,10 +547,9 @@
   </div>
 
   <div class="period-filter" id="periodFilter">
+    <button class="period-btn" data-period="day">Today</button>
     <button class="period-btn" data-period="week">Week</button>
     <button class="period-btn" data-period="month">Month</button>
-    <button class="period-btn" data-period="3months">3 Months</button>
-    <button class="period-btn" data-period="6months">6 Months</button>
     <button class="period-btn active" data-period="year">Year</button>
     <button class="period-btn" data-period="all">All</button>
   </div>
@@ -568,8 +588,10 @@
     <input type="number" step="0.01" min="0" class="amt-input" id="entryAmount" placeholder="0.00">
 
     <label>Description</label>
-    <input type="text" id="entryTitle" placeholder="e.g. Groceries, Salary..." list="entryTitleSuggestions" autocomplete="off">
-    <datalist id="entryTitleSuggestions"></datalist>
+    <div class="title-wrap" id="titleWrap">
+      <input type="text" id="entryTitle" placeholder="e.g. Fuel / Гориво, Groceries..." autocomplete="off" autocapitalize="sentences">
+      <div class="title-suggest" id="titleSuggest" style="display:none;"></div>
+    </div>
 
     <label>Date</label>
     <input type="date" id="entryDate">
@@ -720,7 +742,8 @@
       activePocket: 'personal',
       entries: [],
       trash: [],
-      budgets: {}
+      budgets: {},
+      recentTitles: {}
     };
   }
 
@@ -996,6 +1019,11 @@
         changed = true;
       }
     });
+    // Make sure a Taxi pocket exists (skipped if one already exists under any "Taxi"/"Такси" name)
+    if(!state.pockets.some(p => /taxi|такси/i.test(p.name || '') || p.id === 'taxi')){
+      state.pockets.push({id:'taxi', name:'Taxi', autoRead:false});
+      changed = true;
+    }
     if(changed) saveData();
   }
 
@@ -1032,7 +1060,11 @@
     return sign + '€' + Math.abs(n).toFixed(2);
   };
 
-  const todayISO = () => new Date().toISOString().slice(0,10);
+  // A "day" is the local calendar day, 00:00–23:59 (never UTC, which shifts the date after midnight).
+  const localISO = (d) => {
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  };
+  const todayISO = () => localISO(new Date());
 
   // ---------- Scroll position preservation + back-to-top ----------
   function renderAllPreserveScroll(){
@@ -1077,13 +1109,36 @@
   });
 
   // ---------- Pockets ----------
+  // Picture shown after each pocket name, based on what the pocket is for
+  const POCKET_ICONS = {personal:'👤', apartment:'🏠', cafe:'☕', ecommerce:'🛒', taxi:'🚕'};
+  const POCKET_ICON_KEYWORDS = [
+    [/apart|апарт|rent|наем|home|house|къща|дом/i, '🏠'],
+    [/caf|кафе|coffee|кафен|restaurant|ресторант|bistro/i, '☕'],
+    [/e-?commerce|shop|магазин|online|онлайн|store|temu|amazon/i, '🛒'],
+    [/hotel|хотел|ривиера|riviera/i, '🏨'],
+    [/personal|лични|личен/i, '👤'],
+    [/taxi|такси/i, '🚕'],
+    [/car|кола|auto|авто/i, '🚗'],
+    [/travel|trip|пътуван|vacation|почивка/i, '✈️'],
+    [/saving|спестяв|invest|инвест/i, '🐷'],
+    [/food|храна|grocer/i, '🍽️']
+  ];
+  function pocketIcon(p){
+    if(p.icon) return p.icon;
+    if(POCKET_ICONS[p.id]) return POCKET_ICONS[p.id];
+    for(const [re, icon] of POCKET_ICON_KEYWORDS){
+      if(re.test(p.name || '')) return icon;
+    }
+    return '💼';
+  }
+
   function renderPocketTabs(){
     const wrap = document.getElementById('pocketTabs');
     wrap.innerHTML = '';
     state.pockets.forEach(p => {
       const btn = document.createElement('button');
       btn.className = 'pocket-tab' + (p.id === state.activePocket ? ' active' : '');
-      btn.textContent = p.name + (p.autoRead ? ' 📷' : '');
+      btn.textContent = p.name + ' ' + pocketIcon(p);
       btn.addEventListener('click', () => {
         state.activePocket = p.id;
         selectedIds.clear();
@@ -1116,37 +1171,242 @@
     sel.value = state.activePocket;
   }
 
-  // ---------- Common description suggestions (most-used first) ----------
-  function populateTitleSuggestions(){
-    const dl = document.getElementById('entryTitleSuggestions');
-    if(!dl) return;
-    const counts = {};
-    state.entries
-      .filter(e => e.pocket === state.activePocket)
-      .forEach(e=>{
-        const t = (e.title || '').trim();
-        if(!t || t === '(no description)') return;
-        counts[t] = (counts[t] || 0) + 1;
-      });
-    const top = Object.keys(counts)
-      .sort((a,b) => counts[b] - counts[a])
-      .slice(0, 20);
-    dl.innerHTML = top.map(t => `<option value="${escapeHtml(t)}">`).join('');
+  // ---------- Description quick-select (recent 3 + all known, bilingual EN/BG) ----------
+  // Built-in common terms. Typing either language finds the term (e.g. "fuel" or "гориво").
+  const BILINGUAL_TERMS = [
+    ['Fuel','Гориво',['бензин','дизел','petrol','diesel','gas station']],
+    ['Groceries','Продукти',['grocery','храна','food','магазин']],
+    ['Rent','Наем',['rental','квартира']],
+    ['Salary','Заплата',['wage','wages','pay','payroll']],
+    ['Advance','Аванс',['prepayment']],
+    ['Coffee','Кафе',['espresso','кафе']],
+    ['Bread','Хляб',['bakery','пекарна']],
+    ['Milk','Мляко',['мляко','dairy']],
+    ['Fruit','Плодове',['плод','fruits','зеленчуци','vegetables']],
+    ['Meat','Месо',['скара','chicken','пиле']],
+    ['Beer','Бира',['drinks','напитки','alcohol','алкохол']],
+    ['Supplies','Консумативи',['консуматив','consumables','material','материали']],
+    ['Daily turnover','Оборот',['turnover','revenue','sales','продажби','дневен оборот','income','приход']],
+    ['Electricity','Ток',['electric','power','ел','електричество']],
+    ['Water','Вода',['water bill','вик']],
+    ['Heating','Парно',['отопление','heat']],
+    ['Internet','Интернет',['wifi','wi-fi','broadband']],
+    ['Phone','Телефон',['mobile','мобилен','sim','сим','vivacom','a1','yettel','виваком','йеттел']],
+    ['Cleaning','Почистване',['чистене','cleaner','чистачка']],
+    ['Laundry','Пране',['washing','прах','linen','спално бельо','бельо']],
+    ['Repairs','Ремонт',['repair','maintenance','поддръжка','fix']],
+    ['Delivery','Доставка',['shipping','courier','куриер','econt','еконт','speedy','спиди']],
+    ['Packaging','Опаковки',['packaging','кашон','кашони','box','boxes']],
+    ['Taxes','Данъци',['tax','vat','ддс','нап','данък']],
+    ['Insurance','Застраховка',['застраховки']],
+    ['Accountant','Счетоводител',['счетоводство','accounting','счетоводител']],
+    ['Parking','Паркинг',['паркиране']],
+    ['Transport','Транспорт',['taxi','такси','bus','автобус','ticket','билет']],
+    ['Advertising','Реклама',['ads','marketing','маркетинг','facebook','google']],
+    ['Commission','Комисионна',['fee','такса','комисиона','booking','airbnb']],
+    ['Refund','Връщане',['return','върнати','връщане на пари']],
+    ['Staff','Персонал',['employee','служител','работник','worker']],
+    ['Equipment','Оборудване',['уред','machine','машина','tools','инструменти']],
+    ['Furniture','Мебели',['мебел','стол','маса','chair','table']],
+    ['Office','Офис',['stationery','канцелария']],
+    ['Electronics','Електроника',['phones','телефони','cables','кабели','charger','зарядно','components','части']],
+    ['Parts','Части',['spare parts','резервни части','детайли']],
+    ['Restaurant','Ресторант',['lunch','обяд','dinner','вечеря','coffee shop']],
+    ['Medicine','Лекарства',['pharmacy','аптека','doctor','лекар']],
+    ['Clothes','Дрехи',['clothing','облекло','shoes','обувки']],
+    ['Gift','Подарък',['gifts','подаръци','present']],
+    ['Loan payment','Кредит',['loan','credit','вноска','installment','лизинг','leasing']],
+    ['Bank fee','Банкова такса',['банка','bank','card fee','pos']]
+  ];
+
+  function normText(s){ return (s || '').toLowerCase().trim(); }
+  function wordsOf(s){ return normText(s).split(/[^\p{L}\p{N}]+/u).filter(Boolean); }
+
+  // Searchable keys for each built-in term (EN + BG + aliases), computed once
+  const TERM_KEYS = BILINGUAL_TERMS.map(([en, bg, extra]) => {
+    return [en, bg, ...(extra || [])].map(normText);
+  });
+
+  let suggestData = {recent: [], all: []};
+
+  function noteRecentTitle(pocketId, title){
+    const t = (title || '').trim();
+    if(!t || t === '(no description)') return;
+    if(!state.recentTitles) state.recentTitles = {};
+    const list = (state.recentTitles[pocketId] || []).filter(x => normText(x) !== normText(t));
+    list.unshift(t);
+    state.recentTitles[pocketId] = list.slice(0, 20);
   }
+
+  // Build the suggestion data for the pocket currently selected in the Add Entry form
+  function populateTitleSuggestions(){
+    const sel = document.getElementById('entryPocket');
+    const pocketId = (sel && sel.value) || state.activePocket;
+
+    // Existing descriptions in this pocket, with use counts and most recent position
+    const counts = {};
+    const originals = {};
+    const ordered = state.entries
+      .filter(e => e.pocket === pocketId)
+      .sort((a,b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+    ordered.forEach(e=>{
+      const t = (e.title || '').trim();
+      if(!t || t === '(no description)') return;
+      const k = normText(t);
+      counts[k] = (counts[k] || 0) + 1;
+      if(!originals[k]) originals[k] = t;
+    });
+
+    // Recent 3: titles explicitly used most recently, topped up from the entry list
+    const recent = [];
+    const seen = new Set();
+    function pushRecent(t){
+      const k = normText(t);
+      if(!k || k === '(no description)' || seen.has(k) || recent.length >= 3) return;
+      seen.add(k); recent.push(originals[k] || t);
+    }
+    ((state.recentTitles && state.recentTitles[pocketId]) || []).forEach(pushRecent);
+    ordered.forEach(e => pushRecent(e.title || ''));
+
+    // All known descriptions in this pocket, most-used first, each with its bilingual keys
+    const all = Object.keys(counts)
+      .sort((a,b) => counts[b] - counts[a])
+      .map(k => {
+        const label = originals[k];
+        const keys = new Set([k]);
+        const words = wordsOf(label);
+        let hint = '';
+        TERM_KEYS.forEach((tk, i) => {
+          // Link an existing description to a built-in term when it equals it, or contains it as a whole word
+          if(tk.includes(k) || words.some(w => tk.includes(w) && w.length > 2)) tk.forEach(x => keys.add(x));
+          // Exact match: show the same word in the other language as a hint
+          if(tk.slice(0,2).includes(k)) hint = (k === tk[0]) ? BILINGUAL_TERMS[i][1] : BILINGUAL_TERMS[i][0];
+        });
+        return {label, keys: [...keys], hint};
+      });
+
+    // Built-in terms that are not already covered by an existing description
+    const covered = new Set();
+    all.forEach(item => item.keys.forEach(x => covered.add(x)));
+    BILINGUAL_TERMS.forEach(([en, bg], i) => {
+      const tk = TERM_KEYS[i];
+      if(tk.slice(0,2).some(x => covered.has(x))) return;
+      all.push({label: en + ' / ' + bg, keys: tk, builtin: true});
+    });
+
+    suggestData = {recent: recent.map(t => {
+      const k = normText(t);
+      const item = all.find(a => normText(a.label) === k);
+      return {label: t, keys: item ? item.keys : [k], hint: item ? item.hint : ''};
+    }), all};
+  }
+
+  function renderTitleSuggest(){
+    const panel = document.getElementById('titleSuggest');
+    const input = document.getElementById('entryTitle');
+    if(!panel || !input) return;
+    const q = normText(input.value);
+    panel.innerHTML = '';
+
+    function addRow(item, isRecent){
+      const row = document.createElement('div');
+      row.className = 'ts-row';
+      if(isRecent){
+        const clock = document.createElement('span');
+        clock.className = 'ts-clock'; clock.textContent = '🕘';
+        row.appendChild(clock);
+      }
+      const span = document.createElement('span');
+      span.textContent = item.label;
+      row.appendChild(span);
+      if(item.hint){
+        const hint = document.createElement('span');
+        hint.className = 'ts-hint'; hint.textContent = '· ' + item.hint;
+        row.appendChild(hint);
+      }
+      row.addEventListener('click', ()=>{
+        input.value = item.label;
+        hideTitleSuggest();
+        input.blur();
+      });
+      panel.appendChild(row);
+    }
+    function addHead(text){
+      const h = document.createElement('div');
+      h.className = 'ts-head'; h.textContent = text;
+      panel.appendChild(h);
+    }
+
+    if(!q){
+      // Nothing typed yet: 3 most recent first, then everything else
+      const recentKeys = new Set(suggestData.recent.map(r => normText(r.label)));
+      if(suggestData.recent.length){
+        addHead('Recent');
+        suggestData.recent.forEach(r => addRow(r, true));
+      }
+      const rest = suggestData.all.filter(a => !recentKeys.has(normText(a.label)));
+      if(rest.length){
+        addHead('All suggestions');
+        rest.slice(0, 80).forEach(a => addRow(a, false));
+      }
+    } else {
+      // Typed: match any language (label or bilingual keys), recents first
+      const recentKeys = new Set(suggestData.recent.map(r => normText(r.label)));
+      const matches = [];
+      const pool = [...suggestData.recent, ...suggestData.all.filter(a => !recentKeys.has(normText(a.label)))];
+      pool.forEach(item => {
+        const hit = normText(item.label).includes(q) || item.keys.some(k => k.includes(q));
+        if(hit) matches.push(item);
+      });
+      matches.slice(0, 15).forEach(m => addRow(m, recentKeys.has(normText(m.label))));
+    }
+
+    if(!panel.children.length){ hideTitleSuggest(); return; }
+    panel.style.display = 'block';
+    panel.scrollTop = 0;
+  }
+
+  function hideTitleSuggest(){
+    const panel = document.getElementById('titleSuggest');
+    if(panel) panel.style.display = 'none';
+  }
+
+  (function wireTitleSuggest(){
+    const input = document.getElementById('entryTitle');
+    input.addEventListener('focus', ()=>{ populateTitleSuggestions(); renderTitleSuggest(); });
+    input.addEventListener('click', ()=>{ renderTitleSuggest(); });
+    input.addEventListener('input', renderTitleSuggest);
+    input.addEventListener('keydown', (e)=>{
+      if(e.key === 'Escape' || e.key === 'Enter' || e.key === 'Tab') hideTitleSuggest();
+    });
+    // Tapping anywhere outside the description field closes the dropdown
+    document.addEventListener('pointerdown', (e)=>{
+      const wrap = document.getElementById('titleWrap');
+      if(wrap && !wrap.contains(e.target)) hideTitleSuggest();
+    });
+    // Switching pocket in the form switches the suggestions
+    document.getElementById('entryPocket').addEventListener('change', ()=>{
+      populateTitleSuggestions();
+      const panel = document.getElementById('titleSuggest');
+      if(panel && panel.style.display !== 'none') renderTitleSuggest();
+    });
+  })();
 
   // ---------- Balance ----------
   function currentEntries(){
     let list = state.entries.filter(e => e.pocket === state.activePocket);
 
     // Period filter
-    if(currentPeriod !== 'all'){
+    if(currentPeriod === 'day'){
+      // Today = the calendar day from 00:00 to 23:59
+      const today = todayISO();
+      list = list.filter(e => e.date === today);
+    } else if(currentPeriod !== 'all'){
       const cutoff = new Date();
       if(currentPeriod === 'week') cutoff.setDate(cutoff.getDate() - 7);
       else if(currentPeriod === 'month') cutoff.setMonth(cutoff.getMonth() - 1);
-      else if(currentPeriod === '3months') cutoff.setMonth(cutoff.getMonth() - 3);
-      else if(currentPeriod === '6months') cutoff.setMonth(cutoff.getMonth() - 6);
       else if(currentPeriod === 'year') cutoff.setFullYear(cutoff.getFullYear() - 1);
-      const cutoffStr = cutoff.toISOString().slice(0,10);
+      const cutoffStr = localISO(cutoff);
       list = list.filter(e => e.date >= cutoffStr);
     }
 
@@ -1190,7 +1450,7 @@
     const y = now.getFullYear(), m = now.getMonth();
     const monthStart = `${y}-${String(m+1).padStart(2,'0')}-01`;
     const nextMonth = new Date(y, m+1, 1);
-    const monthEnd = nextMonth.toISOString().slice(0,10);
+    const monthEnd = localISO(nextMonth);
     return state.entries
       .filter(e => e.pocket === state.activePocket && e.type === 'expense' && e.date >= monthStart && e.date < monthEnd)
       .reduce((s,e)=> s + e.amount, 0);
@@ -1522,6 +1782,7 @@
     entryModalBackdrop.classList.add('open');
   }
   function closeEntryModal(){
+    hideTitleSuggest();
     entryModalBackdrop.classList.remove('open');
     editingEntryId = null;
     pendingPhotos = [];
@@ -1563,6 +1824,7 @@
         amount, title, date, pocket, type: currentType, photos: pendingPhotos
       });
     }
+    noteRecentTitle(pocket, title);
     saveData();
     closeEntryModal();
     renderAllPreserveScroll();
@@ -1600,7 +1862,7 @@
   function oneYearAgoISO(){
     const d = new Date();
     d.setFullYear(d.getFullYear() - 1);
-    return d.toISOString().slice(0,10);
+    return localISO(d);
   }
 
   function getOldEntries(){
@@ -1938,7 +2200,7 @@
   // ---------- Budgets per category ----------
   function currentMonthExpensesByCategory(){
     const now = new Date();
-    const monthStr = now.toISOString().slice(0,7); // 'YYYY-MM'
+    const monthStr = localISO(now).slice(0,7); // 'YYYY-MM'
     const map = {};
     state.entries
       .filter(e => e.pocket === state.activePocket && e.type === 'expense' && e.date.slice(0,7) === monthStr)
